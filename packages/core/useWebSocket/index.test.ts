@@ -95,6 +95,37 @@ describe('useWebSocket', () => {
       expect(mockWebSocket).toHaveBeenCalledTimes(2)
     })
 
+    it('should clear reconnect timer', async () => {
+      const delay = 10
+
+      vm = useSetup(() => {
+        const ref = useWebSocket('ws://localhost', {
+          autoReconnect: {
+            delay,
+          },
+        })
+
+        return {
+          ref,
+        }
+      })
+
+      vm.ref.ws.value?.onopen?.(new Event('open'))
+
+      vm.ref.ws.value?.onclose?.(new CloseEvent('close'))
+
+      vm.ref.open()
+
+      const ws = vm.ref.ws.value!
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, delay + 10)
+      })
+
+      expect(vm.ref.ws.value).toBe(ws)
+      expect(vm.ref.status.value).toBe('CONNECTING')
+    })
+
     it('should open socket', () => {
       vm = useSetup(() => {
         const ref = useWebSocket('ws://localhost', {

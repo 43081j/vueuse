@@ -1,7 +1,7 @@
 import type { Fn, MaybeRefOrGetter } from '@vueuse/shared'
 import type { Ref } from 'vue'
 import { isClient, isWorker, toRef, tryOnScopeDispose, useIntervalFn } from '@vueuse/shared'
-import { ref, watch } from 'vue'
+import { ref, shallowRef, watch } from 'vue'
 import { useEventListener } from '../useEventListener'
 
 export type WebSocketStatus = 'OPEN' | 'CONNECTING' | 'CLOSED'
@@ -163,7 +163,7 @@ export function useWebSocket<Data = any>(
 
   const data: Ref<Data | null> = ref(null)
   const status = ref<WebSocketStatus>('CLOSED')
-  const wsRef = ref<WebSocket | undefined>()
+  const wsRef = shallowRef<WebSocket | undefined>()
   const urlRef = toRef(url)
 
   let heartbeatPause: Fn | undefined
@@ -174,6 +174,7 @@ export function useWebSocket<Data = any>(
 
   let bufferedData: (string | ArrayBuffer | Blob)[] = []
 
+  let retryTimeout: ReturnType<typeof setTimeout> | undefined
   let pongTimeoutWait: ReturnType<typeof setTimeout> | undefined
 
   const _sendBuffer = () => {
@@ -189,12 +190,18 @@ export function useWebSocket<Data = any>(
     pongTimeoutWait = undefined
   }
 
+  const resetRetry = () => {
+    clearTimeout(retryTimeout)
+    retryTimeout = undefined
+  }
+
   // Status code 1000 -> Normal Closure https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent/code
   const close: WebSocket['close'] = (code = 1000, reason) => {
     if (!isClient || !wsRef.value)
       return
     explicitlyClosed = true
     resetHeartbeat()
+    resetRetry()
     heartbeatPause?.()
     wsRef.value.close(code, reason)
     wsRef.value = undefined
@@ -240,10 +247,10 @@ export function useWebSocket<Data = any>(
 
         if (typeof retries === 'number' && (retries < 0 || retried < retries)) {
           retried += 1
-          setTimeout(_init, delay)
+          retryTimeout = setTimeout(_init, delay)
         }
         else if (typeof retries === 'function' && retries()) {
-          setTimeout(_init, delay)
+          retryTimeout = setTimeout(_init, delay)
         }
         else {
           onFailed?.()
